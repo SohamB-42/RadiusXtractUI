@@ -1,0 +1,243 @@
+<Window
+    x:Class="RadiusXtractUI.MainWindow"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:views="using:RadiusXtractUI.Views"
+    Title="RadiusXtract">
+
+    <Grid Background="{StaticResource BackgroundDarkBrush}" RequestedTheme="Dark">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="40"/>  <!-- Title bar -->
+            <RowDefinition Height="*"/>   <!-- Body -->
+            <RowDefinition Height="28"/>  <!-- Status bar -->
+        </Grid.RowDefinitions>
+
+        <!-- ═══════════════════ TITLE BAR ═══════════════════ -->
+        <Border x:Name="AppTitleBar" Grid.Row="0"
+                Background="#121418" BorderBrush="{StaticResource BorderMediumBrush}"
+                BorderThickness="0,0,0,1">
+            <Grid Padding="14,0,0,0">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="*"/>
+                </Grid.ColumnDefinitions>
+
+                <!-- App icon -->
+                <Border Grid.Column="0" Width="18" Height="18" CornerRadius="5"
+                        VerticalAlignment="Center" Margin="0,0,9,0">
+                    <Border.Background>
+                        <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
+                            <GradientStop Color="#3dc7eb" Offset="0"/>
+                            <GradientStop Color="#2a8bd0" Offset="1"/>
+                        </LinearGradientBrush>
+                    </Border.Background>
+                    <Ellipse Width="7" Height="7" Stroke="#0e1013" StrokeThickness="1.5"
+                             HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                </Border>
+
+                <!-- App name -->
+                <TextBlock Grid.Column="1" Text="RadiusXtract" FontSize="12"
+                           FontWeight="SemiBold" Foreground="#cdd3da"
+                           VerticalAlignment="Center"/>
+
+                <!-- Active file -->
+                <TextBlock Grid.Column="2" x:Name="ActiveFileText" FontSize="12"
+                           Foreground="#6b7480" VerticalAlignment="Center" Margin="8,0,0,0"
+                           Text="— No file"/>
+            </Grid>
+        </Border>
+
+        <!-- ═══════════════════ BODY ═══════════════════ -->
+        <Grid Grid.Row="1">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="60"/>  <!-- Nav rail -->
+                <ColumnDefinition Width="*"/>   <!-- Content -->
+            </Grid.ColumnDefinitions>
+
+            <!-- NAV RAIL -->
+            <Border Grid.Column="0" Background="{StaticResource NavRailBgBrush}"
+                    BorderBrush="{StaticResource BorderMediumBrush}" BorderThickness="0,0,1,0">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                        <RowDefinition Height="Auto"/>
+                    </Grid.RowDefinitions>
+
+                    <!-- Top nav items -->
+                    <StackPanel Grid.Row="0" Spacing="4" Padding="0,10,0,0"
+                                HorizontalAlignment="Center">
+                        <Button x:Name="NavEstimate" Click="OnNavClick" Tag="0"
+                                Width="44" Height="44" Padding="0"
+                                Background="Transparent" BorderThickness="0"
+                                CornerRadius="8" ToolTipService.ToolTip="Estimate">
+                            <Grid>
+                                <Border x:Name="NavEstimateIndicator" Width="3" Height="22"
+                                        CornerRadius="2" Background="#3dc7eb"
+                                        HorizontalAlignment="Left" Margin="-14,0,0,0"/>
+                                <FontIcon Glyph="&#xE9D9;" FontSize="20" Foreground="#3dc7eb"/>
+                            </Grid>
+                        </Button>
+                        <Button x:Name="NavBatch" Click="OnNavClick" Tag="1"
+                                Width="44" Height="44" Padding="0"
+                                Background="Transparent" BorderThickness="0"
+                                CornerRadius="8" ToolTipService.ToolTip="Batch">
+                            <Grid>
+                                <Border x:Name="NavBatchIndicator" Width="3" Height="22"
+                                        CornerRadius="2" Background="#3dc7eb"
+                                        HorizontalAlignment="Left" Margin="-14,0,0,0"
+                                        Visibility="Collapsed"/>
+                                <FontIcon Glyph="&#xE8B1;" FontSize="20" Foreground="#8b939c"/>
+                            </Grid>
+                        </Button>
+                        <Button x:Name="NavHistory" Click="OnNavClick" Tag="2"
+                                Width="44" Height="44" Padding="0"
+                                Background="Transparent" BorderThickness="0"
+                                CornerRadius="8" ToolTipService.ToolTip="History">
+                            <Grid>
+                                <Border x:Name="NavHistoryIndicator" Width="3" Height="22"
+                                        CornerRadius="2" Background="#3dc7eb"
+                                        HorizontalAlignment="Left" Margin="-14,0,0,0"
+                                        Visibility="Collapsed"/>
+                                <FontIcon Glyph="&#xE81C;" FontSize="20" Foreground="#8b939c"/>
+                            </Grid>
+                        </Button>
+                    </StackPanel>
+
+                    <!-- Settings at bottom -->
+                    <StackPanel Grid.Row="2" HorizontalAlignment="Center" Margin="0,0,0,12">
+                        <Button x:Name="NavSettings" Click="OnNavClick" Tag="3"
+                                Width="44" Height="44" Padding="0"
+                                Background="Transparent" BorderThickness="0"
+                                CornerRadius="8" ToolTipService.ToolTip="Settings">
+                            <Grid>
+                                <Border x:Name="NavSettingsIndicator" Width="3" Height="22"
+                                        CornerRadius="2" Background="#3dc7eb"
+                                        HorizontalAlignment="Left" Margin="-14,0,0,0"
+                                        Visibility="Collapsed"/>
+                                <FontIcon Glyph="&#xE713;" FontSize="20" Foreground="#8b939c"/>
+                            </Grid>
+                        </Button>
+                    </StackPanel>
+                </Grid>
+            </Border>
+
+            <!-- CONTENT AREA -->
+            <Grid Grid.Column="1">
+                <views:EstimatePage x:Name="PageEstimate"/>
+                <views:BatchPage x:Name="PageBatch" Visibility="Collapsed"/>
+                <views:HistoryPage x:Name="PageHistory" Visibility="Collapsed"/>
+                <views:SettingsPage x:Name="PageSettings" Visibility="Collapsed"/>
+
+                <!-- CONSOLE OVERLAY -->
+                <Canvas x:Name="ConsoleCanvas" Visibility="Collapsed">
+                    <Border x:Name="ConsolePanel"
+                            Canvas.Left="312" Canvas.Top="350"
+                            Width="600" Height="264"
+                            CornerRadius="9" Background="{StaticResource ConsoleBgBrush}"
+                            BorderBrush="#1FFFFFFF" BorderThickness="1">
+
+                        <Grid>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="36"/>
+                                <RowDefinition Height="*"/>
+                            </Grid.RowDefinitions>
+
+                            <!-- Console title bar -->
+                            <Border Grid.Row="0" CornerRadius="9,9,0,0"
+                                    BorderBrush="{StaticResource BorderMediumBrush}"
+                                    BorderThickness="0,0,0,1"
+                                    PointerPressed="OnConsoleDragStart"
+                                    PointerMoved="OnConsoleDrag"
+                                    PointerReleased="OnConsoleDragEnd">
+                                <Border.Background>
+                                    <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
+                                        <GradientStop Color="#16191e" Offset="0"/>
+                                        <GradientStop Color="#0f1216" Offset="1"/>
+                                    </LinearGradientBrush>
+                                </Border.Background>
+                                <Grid Padding="13,0,6,0">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <Border Grid.Column="0" Width="14" Height="14" CornerRadius="4"
+                                            Margin="0,0,9,0" VerticalAlignment="Center">
+                                        <Border.Background>
+                                            <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
+                                                <GradientStop Color="#3dc7eb" Offset="0"/>
+                                                <GradientStop Color="#2a8bd0" Offset="1"/>
+                                            </LinearGradientBrush>
+                                        </Border.Background>
+                                    </Border>
+                                    <TextBlock Grid.Column="1" Text="Console" FontSize="12"
+                                               FontWeight="SemiBold" Foreground="#cdd3da"
+                                               VerticalAlignment="Center"/>
+                                    <TextBlock Grid.Column="2" Text="— RadiusXtract" FontSize="12"
+                                               Foreground="#6b7480" VerticalAlignment="Center"
+                                               Margin="7,0,0,0"/>
+                                    <Button Grid.Column="4" Content="Clear" Click="OnConsoleClear"
+                                            FontSize="11.5" Foreground="#8a929b"
+                                            Background="Transparent" BorderThickness="0"
+                                            Padding="9,0" Height="24" CornerRadius="5"/>
+                                    <Button Grid.Column="5" Click="OnConsoleClose"
+                                            Width="30" Height="24" Padding="0"
+                                            Background="Transparent" BorderThickness="0"
+                                            CornerRadius="5">
+                                        <FontIcon Glyph="&#xE8BB;" FontSize="10" Foreground="#8a929b"/>
+                                    </Button>
+                                </Grid>
+                            </Border>
+
+                            <!-- Console content -->
+                            <ScrollViewer Grid.Row="1" Padding="14,11">
+                                <StackPanel x:Name="ConsoleLines" Spacing="2">
+                                    <!-- Blinking cursor -->
+                                    <TextBlock Text="›" FontSize="12" Foreground="#3dc7eb"
+                                               FontFamily="Cascadia Mono,Consolas" Margin="0,3,0,0"/>
+                                </StackPanel>
+                            </ScrollViewer>
+                        </Grid>
+                    </Border>
+                </Canvas>
+            </Grid>
+        </Grid>
+
+        <!-- ═══════════════════ STATUS BAR ═══════════════════ -->
+        <Border Grid.Row="2" Background="#0a0c0e"
+                BorderBrush="{StaticResource BorderMediumBrush}" BorderThickness="0,1,0,0">
+            <Grid Padding="14,0" ColumnSpacing="16">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+
+                <Ellipse x:Name="StatusDot" Grid.Column="0" Width="7" Height="7"
+                         Fill="#f5b754" VerticalAlignment="Center"/>
+                <TextBlock x:Name="StatusLabel" Grid.Column="1" Text="No file loaded"
+                           FontSize="11.5" Foreground="#7d858e" VerticalAlignment="Center"/>
+                <Border Grid.Column="2" Width="1" Height="13" Background="#1a1e23"/>
+                <TextBlock x:Name="PointCountLabel" Grid.Column="3" Text="— points"
+                           FontSize="11.5" Foreground="#7d858e" VerticalAlignment="Center"/>
+                <TextBlock Grid.Column="5" Text="RANSAC · cylinder"
+                           FontSize="11.5" Foreground="#7d858e" VerticalAlignment="Center"/>
+                <Border Grid.Column="6" Width="1" Height="13" Background="#1a1e23"/>
+                <TextBlock x:Name="UnitLabel" Grid.Column="7" Text="mm"
+                           FontSize="11.5" Foreground="#7d858e" VerticalAlignment="Center"
+                           FontFamily="Cascadia Mono,Consolas"/>
+            </Grid>
+        </Border>
+    </Grid>
+</Window>

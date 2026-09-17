@@ -1,0 +1,159 @@
+<UserControl
+    x:Class="RadiusXtractUI.Views.SettingsPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <Grid Background="{StaticResource BackgroundDarkBrush}">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="50"/>
+            <RowDefinition Height="*"/>
+        </Grid.RowDefinitions>
+
+        <!-- COMMAND BAR -->
+        <Border Grid.Row="0" Background="{StaticResource PanelBgBrush}"
+                BorderBrush="{StaticResource BorderMediumBrush}" BorderThickness="0,0,0,1">
+            <Grid Padding="14,0">
+                <TextBlock Text="Settings" FontSize="15" FontWeight="SemiBold" 
+                           Foreground="{StaticResource TextPrimaryBrush}" VerticalAlignment="Center" Margin="10,0,0,0"/>
+            </Grid>
+        </Border>
+
+        <!-- MAIN CONTENT -->
+        <ScrollViewer Grid.Row="1" Padding="32">
+            <StackPanel MaxWidth="800" HorizontalAlignment="Left" Spacing="32">
+                
+                <!-- ALGORITHM SECTION -->
+                <StackPanel Spacing="16">
+                    <TextBlock Text="ALGORITHM (RANSAC)" Style="{StaticResource SectionLabelStyle}"/>
+                    
+                    <Border Style="{StaticResource SectionCardStyle}">
+                        <StackPanel Spacing="24">
+                            <!-- Iterations -->
+                            <Grid>
+                                <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                <StackPanel>
+                                    <TextBlock Text="Max iterations" FontSize="13" FontWeight="SemiBold" Foreground="{StaticResource TextPrimaryBrush}"/>
+                                    <TextBlock Text="Higher values improve accuracy but take longer" FontSize="11.5" Foreground="{StaticResource TextSubtleBrush}" Margin="0,4,0,0"/>
+                                </StackPanel>
+                                <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="16" VerticalAlignment="Center">
+                                    <Slider Width="200" Minimum="100" Maximum="10000" StepFrequency="100" Value="{x:Bind ViewModel.MaxIterations, Mode=TwoWay}"/>
+                                    <TextBlock Text="{x:Bind ViewModel.MaxIterationsDisplay, Mode=OneWay}" Width="48" TextAlignment="Right" Style="{StaticResource MonoValueStyle}" VerticalAlignment="Center"/>
+                                </StackPanel>
+                            </Grid>
+
+                            <Border Height="1" Background="{StaticResource BorderSubtleBrush}"/>
+
+                            <!-- Distance threshold -->
+                            <Grid>
+                                <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                <StackPanel>
+                                    <TextBlock Text="Distance threshold" FontSize="13" FontWeight="SemiBold" Foreground="{StaticResource TextPrimaryBrush}"/>
+                                    <TextBlock Text="Maximum distance from model to be considered an inlier" FontSize="11.5" Foreground="{StaticResource TextSubtleBrush}" Margin="0,4,0,0"/>
+                                </StackPanel>
+                                <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="16" VerticalAlignment="Center">
+                                    <Slider Width="200" Minimum="0.5" Maximum="10.0" StepFrequency="0.5" Value="{x:Bind ViewModel.DistanceThreshold, Mode=TwoWay}"/>
+                                    <TextBlock Text="{x:Bind ViewModel.ThresholdDisplay, Mode=OneWay}" Width="48" TextAlignment="Right" Style="{StaticResource MonoValueStyle}" VerticalAlignment="Center"/>
+                                </StackPanel>
+                            </Grid>
+
+                            <Border Height="1" Background="{StaticResource BorderSubtleBrush}"/>
+
+                            <!-- Inlier ratio -->
+                            <Grid>
+                                <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                <StackPanel>
+                                    <TextBlock Text="Minimum inlier ratio" FontSize="13" FontWeight="SemiBold" Foreground="{StaticResource TextPrimaryBrush}"/>
+                                    <TextBlock Text="Required percentage of points fitting the cylinder" FontSize="11.5" Foreground="{StaticResource TextSubtleBrush}" Margin="0,4,0,0"/>
+                                </StackPanel>
+                                <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="16" VerticalAlignment="Center">
+                                    <Slider Width="200" Minimum="30" Maximum="95" StepFrequency="1" Value="{x:Bind ViewModel.MinInlierRatio, Mode=TwoWay}"/>
+                                    <TextBlock Text="{x:Bind ViewModel.InlierRatioDisplay, Mode=OneWay}" Width="48" TextAlignment="Right" Style="{StaticResource MonoValueStyle}" VerticalAlignment="Center"/>
+                                </StackPanel>
+                            </Grid>
+                        </StackPanel>
+                    </Border>
+                </StackPanel>
+
+                <!-- MEASUREMENT SECTION -->
+                <StackPanel Spacing="16">
+                    <TextBlock Text="MEASUREMENT" Style="{StaticResource SectionLabelStyle}"/>
+                    
+                    <Border Style="{StaticResource SectionCardStyle}">
+                        <StackPanel>
+                            <TextBlock Text="Units" FontSize="13" FontWeight="SemiBold" Foreground="{StaticResource TextPrimaryBrush}"/>
+                            <TextBlock Text="Default unit for displayed measurements." FontSize="11.5" Foreground="{StaticResource TextSubtleBrush}" Margin="0,4,0,16"/>
+                            <Grid ColumnSpacing="8">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="*"/>
+                                </Grid.ColumnDefinitions>
+                                <RadioButton x:Name="RbMm" Grid.Column="0" IsChecked="True" Tag="mm" Checked="OnUnitChanged" Style="{StaticResource CardRadioButtonStyle}">
+                                    <StackPanel HorizontalAlignment="Center">
+                                        <TextBlock Text="mm" FontSize="14" FontWeight="SemiBold" HorizontalAlignment="Center"/>
+                                        <TextBlock Text="millimeters" FontSize="11" Foreground="{StaticResource TextSubtleBrush}" HorizontalAlignment="Center" Margin="0,2,0,0"/>
+                                    </StackPanel>
+                                </RadioButton>
+                                <RadioButton x:Name="RbM" Grid.Column="1" Tag="m" Checked="OnUnitChanged" Style="{StaticResource CardRadioButtonStyle}">
+                                    <StackPanel HorizontalAlignment="Center">
+                                        <TextBlock Text="m" FontSize="14" FontWeight="SemiBold" HorizontalAlignment="Center"/>
+                                        <TextBlock Text="meters" FontSize="11" Foreground="{StaticResource TextSubtleBrush}" HorizontalAlignment="Center" Margin="0,2,0,0"/>
+                                    </StackPanel>
+                                </RadioButton>
+                                <RadioButton x:Name="RbIn" Grid.Column="2" Tag="in" Checked="OnUnitChanged" Style="{StaticResource CardRadioButtonStyle}">
+                                    <StackPanel HorizontalAlignment="Center">
+                                        <TextBlock Text="in" FontSize="14" FontWeight="SemiBold" HorizontalAlignment="Center"/>
+                                        <TextBlock Text="inches" FontSize="11" Foreground="{StaticResource TextSubtleBrush}" HorizontalAlignment="Center" Margin="0,2,0,0"/>
+                                    </StackPanel>
+                                </RadioButton>
+                            </Grid>
+                        </StackPanel>
+                    </Border>
+                </StackPanel>
+
+                <!-- VIEWPORT DEFAULTS SECTION -->
+                <StackPanel Spacing="16">
+                    <TextBlock Text="VIEWPORT DEFAULTS" Style="{StaticResource SectionLabelStyle}"/>
+                    
+                    <Border Style="{StaticResource SectionCardStyle}">
+                        <StackPanel Spacing="24">
+                            <Grid>
+                                <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                <StackPanel>
+                                    <TextBlock Text="Auto-orbit" FontSize="13" FontWeight="SemiBold" Foreground="{StaticResource TextPrimaryBrush}"/>
+                                    <TextBlock Text="Slowly rotate point cloud when loaded" FontSize="11.5" Foreground="{StaticResource TextSubtleBrush}" Margin="0,4,0,0"/>
+                                </StackPanel>
+                                <ToggleSwitch Grid.Column="1" IsOn="{x:Bind ViewModel.AutoRotateOnLoad, Mode=TwoWay}" MinWidth="0" VerticalAlignment="Center" Margin="0,-6,0,-6"/>
+                            </Grid>
+                            
+                            <Border Height="1" Background="{StaticResource BorderSubtleBrush}"/>
+                            
+                            <Grid>
+                                <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                <StackPanel>
+                                    <TextBlock Text="Show axis gizmo" FontSize="13" FontWeight="SemiBold" Foreground="{StaticResource TextPrimaryBrush}"/>
+                                    <TextBlock Text="Display X/Y/Z indicator in corner" FontSize="11.5" Foreground="{StaticResource TextSubtleBrush}" Margin="0,4,0,0"/>
+                                </StackPanel>
+                                <ToggleSwitch Grid.Column="1" IsOn="{x:Bind ViewModel.ShowAxisGizmo, Mode=TwoWay}" MinWidth="0" VerticalAlignment="Center" Margin="0,-6,0,-6"/>
+                            </Grid>
+
+                            <Border Height="1" Background="{StaticResource BorderSubtleBrush}"/>
+
+                            <Grid>
+                                <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                <StackPanel>
+                                    <TextBlock Text="Load full density" FontSize="13" FontWeight="SemiBold" Foreground="{StaticResource TextPrimaryBrush}"/>
+                                    <TextBlock Text="Skip voxel downsampling (may impact performance)" FontSize="11.5" Foreground="{StaticResource TextSubtleBrush}" Margin="0,4,0,0"/>
+                                </StackPanel>
+                                <ToggleSwitch Grid.Column="1" IsOn="{x:Bind ViewModel.LoadFullDensity, Mode=TwoWay}" MinWidth="0" VerticalAlignment="Center" Margin="0,-6,0,-6"/>
+                            </Grid>
+                        </StackPanel>
+                    </Border>
+                </StackPanel>
+                
+                <TextBlock Text="RadiusXtract 2.4.0 — Frontend Prototype" FontSize="11.5" Foreground="{StaticResource TextMutedBrush}" Margin="0,16,0,0" HorizontalAlignment="Center"/>
+
+            </StackPanel>
+        </ScrollViewer>
+    </Grid>
+</UserControl>

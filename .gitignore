@@ -1,0 +1,31 @@
+## Build & Output directories
+bin/
+obj/
+[Bb]in/
+[Oo]bj/
+
+## Visual Studio & IDE files
+.vs/
+*.user
+*.userosscache
+*.suo
+*.userprefs
+*.sln.docstates
+*.ide
+
+## Logs & Temp files
+crash_log.txt
+*.log
+*.tmp
+*.temp
+
+## Large archive / Legacy backups
+*.zip
+radiusxtract-20260619T175054Z-3-001/
+radiusxtract-20260619T175054Z-3-001.zip
+
+## OS generated files
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+.DS_Store

@@ -1,0 +1,772 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RadiusXtract GPU Viewport</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            user-select: none;
+            -webkit-user-select: none;
+        }
+        body, html {
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background-color: #0e1013;
+            font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, Roboto, sans-serif;
+            color: #d1d7df;
+        }
+        #viewport-container {
+            position: relative;
+            width: 100%;
+            height: 100%;
+        }
+        canvas {
+            width: 100%;
+            height: 100%;
+            display: block;
+        }
+        /* HUD Overlays */
+        .hud-panel {
+            position: absolute;
+            pointer-events: none;
+            display: flex;
+            gap: 8px;
+            align-items: center;
+            z-index: 10;
+        }
+        .hud-top-left {
+            top: 14px;
+            left: 16px;
+            flex-direction: column;
+            align-items: flex-start;
+            gap: 6px;
+        }
+        .hud-bottom-left {
+            bottom: 14px;
+            left: 16px;
+            font-size: 11px;
+            color: #636d79;
+        }
+        .hud-badge {
+            background: rgba(14, 18, 23, 0.78);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            padding: 5px 10px;
+            border-radius: 6px;
+            font-size: 11.5px;
+            font-weight: 500;
+            color: #a2abb5;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            letter-spacing: 0.2px;
+        }
+        .hud-badge-gpu {
+            border-color: rgba(61, 199, 235, 0.25);
+            background: rgba(10, 22, 30, 0.85);
+            color: #7ce2fe;
+        }
+        .hud-badge-gpu .dot {
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            background-color: #3dc7eb;
+            box-shadow: 0 0 8px #3dc7eb;
+        }
+        .hud-badge .val {
+            font-family: 'Consolas', 'Courier New', monospace;
+            color: #e2e8f0;
+            font-weight: 600;
+        }
+        .view-controls {
+            position: absolute;
+            bottom: 16px;
+            right: 16px;
+            display: flex;
+            gap: 6px;
+            z-index: 10;
+        }
+        .ctrl-btn {
+            background: rgba(18, 22, 28, 0.85);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            color: #cdd3da;
+            padding: 6px 10px;
+            border-radius: 6px;
+            font-size: 11.5px;
+            cursor: pointer;
+            backdrop-filter: blur(8px);
+            transition: all 0.15s ease;
+        }
+        .ctrl-btn:hover {
+            background: rgba(30, 38, 48, 0.95);
+            border-color: #3dc7eb;
+            color: #fff;
+        }
+    </style>
+</head>
+<body>
+    <div id="viewport-container">
+        <canvas id="glcanvas"></canvas>
+
+        <!-- Top Left: Stats & Point Count -->
+        <div class="hud-panel hud-top-left">
+            <div class="hud-badge hud-badge-gpu">
+                <span class="dot"></span>
+                <span id="gpu-name">GPU Accelerated</span>
+            </div>
+            <div class="hud-badge">
+                <span>Points:</span>
+                <span class="val" id="point-count">0</span>
+                <span style="color: #4b5563; margin: 0 2px;">|</span>
+                <span>FPS:</span>
+                <span class="val" id="fps-val">60</span>
+            </div>
+        </div>
+
+        <!-- Bottom Left: Controls Hint -->
+        <div class="hud-panel hud-bottom-left">
+            <span>Left drag: Orbit &bull; Right drag: Pan &bull; Wheel: Zoom</span>
+        </div>
+
+        <!-- Bottom Right: Reset View -->
+        <div class="view-controls">
+            <button class="ctrl-btn" onclick="resetCamera()">Reset View</button>
+        </div>
+    </div>
+
+    <script>
+        // --- WebGL2 Setup ---
+        const canvas = document.getElementById('glcanvas');
+        const gl = canvas.getContext('webgl2', {
+            antialias: true,
+            alpha: false,
+            powerPreference: 'high-performance'
+        });
+
+        if (!gl) {
+            alert('WebGL 2.0 not supported by this browser/GPU!');
+        }
+
+        // Query GPU info
+        const debugInfo = gl.getExtension('WEBGL_debug_renderer_info');
+        if (debugInfo) {
+            const renderer = gl.getParameter(debugInfo.UNMASKED_RENDERER_WEBGL);
+            const gpuEl = document.getElementById('gpu-name');
+            if (renderer) {
+                let clean = renderer;
+                if (renderer.includes('RTX 2050')) clean = 'RTX 2050';
+                else if (renderer.includes('NVIDIA')) {
+                    const match = renderer.match(/NVIDIA\s+GeForce\s+[^,)]+/i);
+                    clean = match ? match[0] : 'NVIDIA GPU';
+                }
+                gpuEl.textContent = 'GPU: ' + clean;
+            }
+        }
+
+        // --- Shaders ---
+        const vsPointSource = `#version 300 es
+        precision highp float;
+
+        layout(location = 0) in vec3 a_position;
+        layout(location = 1) in float a_is_outlier;
+
+        uniform mat4 u_mvp;
+        uniform float u_pointSize;
+        uniform int u_colorMode; // 0: axis, 1: depth, 2: solid
+        uniform int u_showOutliers;
+        uniform vec3 u_center;
+        uniform vec3 u_boundsMin;
+        uniform vec3 u_boundsMax;
+        uniform float u_modelRadius;
+
+        out vec3 v_color;
+
+        // Turbo / Heatmap color gradient for Depth
+        vec3 depthGradient(float t) {
+            t = clamp(t, 0.0, 1.0);
+            // Blue -> Cyan -> Green -> Yellow -> Red
+            float r = clamp(1.5 - abs(t * 4.0 - 3.0), 0.0, 1.0);
+            float g = clamp(1.5 - abs(t * 4.0 - 2.0), 0.0, 1.0);
+            float b = clamp(1.5 - abs(t * 4.0 - 1.0), 0.0, 1.0);
+            return vec3(r, g, b);
+        }
+
+        void main() {
+            vec3 relP = a_position - u_center;
+            gl_Position = u_mvp * vec4(relP, 1.0);
+            
+            // Point Size scaling: pointSize 1.0 -> 3.2px, 2.2 -> 7px, 5.0 -> 16px
+            float baseSize = u_pointSize * 3.2;
+
+            if (u_showOutliers == 1 && a_is_outlier > 0.5) {
+                // Outlier: Vibrant Neon Red + 1.6x size boost so it's unmistakably visible
+                v_color = vec3(1.0, 0.15, 0.15);
+                gl_PointSize = clamp(baseSize * 1.6, 3.0, 64.0);
+            } else {
+                gl_PointSize = clamp(baseSize, 1.0, 64.0);
+
+                if (u_colorMode == 0) {
+                    // Axis color: normalized coordinates [0, 1] mapped to RGB
+                    vec3 range = max(u_boundsMax - u_boundsMin, vec3(0.0001));
+                    vec3 norm = clamp((a_position - u_boundsMin) / range, 0.0, 1.0);
+                    // Enhance color contrast across XYZ
+                    v_color = vec3(
+                        mix(0.15, 1.0, norm.x),
+                        mix(0.25, 0.95, norm.y),
+                        mix(0.35, 1.0, norm.z)
+                    );
+                } else if (u_colorMode == 1) {
+                    // Depth color: distance along Z depth relative to model radius
+                    float depthVal = clamp((relP.z / max(u_modelRadius, 0.01) + 1.0) * 0.5, 0.0, 1.0);
+                    v_color = depthGradient(depthVal);
+                } else {
+                    // Solid: Crisp neon electric cyan
+                    v_color = vec3(0.24, 0.78, 0.92);
+                }
+            }
+        }`;
+
+        const fsPointSource = `#version 300 es
+        precision highp float;
+        in vec3 v_color;
+        out vec4 fragColor;
+
+        void main() {
+            // Render smooth anti-aliased circular point sprite
+            vec2 coord = gl_PointCoord - vec2(0.5);
+            float dist = length(coord);
+            if (dist > 0.5) {
+                discard;
+            }
+            float alpha = smoothstep(0.5, 0.35, dist);
+            fragColor = vec4(v_color, alpha);
+        }`;
+
+        // Line Overlay Shaders
+        const vsLineSource = `#version 300 es
+        precision highp float;
+        layout(location = 0) in vec3 a_position;
+        uniform mat4 u_mvp;
+        uniform vec3 u_center;
+
+        void main() {
+            gl_Position = u_mvp * vec4(a_position - u_center, 1.0);
+        }`;
+
+        const fsLineSource = `#version 300 es
+        precision highp float;
+        uniform vec4 u_lineColor;
+        out vec4 fragColor;
+
+        void main() {
+            fragColor = u_lineColor;
+        }`;
+
+        // Shader compiler helper
+        function createProgram(gl, vsSrc, fsSrc) {
+            const vs = gl.createShader(gl.VERTEX_SHADER);
+            gl.shaderSource(vs, vsSrc);
+            gl.compileShader(vs);
+            if (!gl.getShaderParameter(vs, gl.COMPILE_STATUS)) {
+                console.error('VS Error:', gl.getShaderInfoLog(vs));
+            }
+
+            const fs = gl.createShader(gl.FRAGMENT_SHADER);
+            gl.shaderSource(fs, fsSrc);
+            gl.compileShader(fs);
+            if (!gl.getShaderParameter(fs, gl.COMPILE_STATUS)) {
+                console.error('FS Error:', gl.getShaderInfoLog(fs));
+            }
+
+            const prog = gl.createProgram();
+            gl.attachShader(prog, vs);
+            gl.attachShader(prog, fs);
+            gl.linkProgram(prog);
+            return prog;
+        }
+
+        const pointProgram = createProgram(gl, vsPointSource, fsPointSource);
+        const lineProgram = createProgram(gl, vsLineSource, fsLineSource);
+
+        // Uniform locations - Points
+        const uPointMVP = gl.getUniformLocation(pointProgram, 'u_mvp');
+        const uPointSize = gl.getUniformLocation(pointProgram, 'u_pointSize');
+        const uColorMode = gl.getUniformLocation(pointProgram, 'u_colorMode');
+        const uShowOutliers = gl.getUniformLocation(pointProgram, 'u_showOutliers');
+        const uPointCenter = gl.getUniformLocation(pointProgram, 'u_center');
+        const uBoundsMin = gl.getUniformLocation(pointProgram, 'u_boundsMin');
+        const uBoundsMax = gl.getUniformLocation(pointProgram, 'u_boundsMax');
+        const uModelRadius = gl.getUniformLocation(pointProgram, 'u_modelRadius');
+
+        // Uniform locations - Lines
+        const uLineMVP = gl.getUniformLocation(lineProgram, 'u_mvp');
+        const uLineCenter = gl.getUniformLocation(lineProgram, 'u_center');
+        const uLineColor = gl.getUniformLocation(lineProgram, 'u_lineColor');
+
+        // Buffers
+        const pointVAO = gl.createVertexArray();
+        const pointPosVBO = gl.createBuffer();
+        const pointOutlierVBO = gl.createBuffer();
+
+        gl.bindVertexArray(pointVAO);
+        gl.bindBuffer(gl.ARRAY_BUFFER, pointPosVBO);
+        gl.enableVertexAttribArray(0);
+        gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 0, 0);
+
+        gl.bindBuffer(gl.ARRAY_BUFFER, pointOutlierVBO);
+        gl.enableVertexAttribArray(1);
+        gl.vertexAttribPointer(1, 1, gl.FLOAT, false, 0, 0);
+        gl.bindVertexArray(null);
+
+        // Line overlay buffer (cylinder)
+        const lineVAO = gl.createVertexArray();
+        const lineVBO = gl.createBuffer();
+        gl.bindVertexArray(lineVAO);
+        gl.bindBuffer(gl.ARRAY_BUFFER, lineVBO);
+        gl.enableVertexAttribArray(0);
+        gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 0, 0);
+        gl.bindVertexArray(null);
+
+        // Grid buffer
+        const gridVAO = gl.createVertexArray();
+        const gridVBO = gl.createBuffer();
+        gl.bindVertexArray(gridVAO);
+        gl.bindBuffer(gl.ARRAY_BUFFER, gridVBO);
+        gl.enableVertexAttribArray(0);
+        gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 0, 0);
+        gl.bindVertexArray(null);
+        let gridLineCount = 0;
+
+        // --- State ---
+        let pointCount = 0;
+        let boundsMin = [-1, -1, -1];
+        let boundsMax = [1, 1, 1];
+        let center = [0, 0, 0];
+        let modelRadius = 1.0;
+
+        // View options
+        let pointSize = 2.4;
+        let colorMode = 0; // 0: axis, 1: depth, 2: solid
+        let showOutliers = 0;
+        let showOverlay = true;
+        let showGrid = false;
+
+        // Cylinder parameters
+        let cylinder = {
+            axis: [0, 0, 1],
+            center: [0, 0, 0],
+            radius: 0.2,
+            length: 1.0,
+            rms: 0.01
+        };
+        let lineVertexCount = 0;
+
+        // Camera / Orbit state
+        let camera = {
+            yaw: 0.4,
+            pitch: 0.3,
+            distance: 3.0,
+            targetYaw: 0.4,
+            targetPitch: 0.3,
+            targetDistance: 3.0,
+            panX: 0,
+            panY: 0
+        };
+
+        // --- Matrix Helpers ---
+        function mat4Multiply(a, b) {
+            let out = new Float32Array(16);
+            for (let i = 0; i < 4; i++) {
+                for (let j = 0; j < 4; j++) {
+                    out[j * 4 + i] = 
+                        a[0 * 4 + i] * b[j * 4 + 0] +
+                        a[1 * 4 + i] * b[j * 4 + 1] +
+                        a[2 * 4 + i] * b[j * 4 + 2] +
+                        a[3 * 4 + i] * b[j * 4 + 3];
+                }
+            }
+            return out;
+        }
+
+        function mat4Perspective(fovy, aspect, near, far) {
+            let f = 1.0 / Math.tan(fovy / 2);
+            let nf = 1 / (near - far);
+            return [
+                f / aspect, 0, 0, 0,
+                0, f, 0, 0,
+                0, 0, (far + near) * nf, -1,
+                0, 0, (2 * far * near) * nf, 0
+            ];
+        }
+
+        function mat4LookAt(eye, center, up) {
+            let z0 = eye[0] - center[0], z1 = eye[1] - center[1], z2 = eye[2] - center[2];
+            let len = 1 / Math.hypot(z0, z1, z2);
+            z0 *= len; z1 *= len; z2 *= len;
+
+            let x0 = up[1] * z2 - up[2] * z1, x1 = up[2] * z0 - up[0] * z2, x2 = up[0] * z1 - up[1] * z0;
+            len = 1 / Math.hypot(x0, x1, x2);
+            x0 *= len; x1 *= len; x2 *= len;
+
+            let y0 = z1 * x2 - z2 * x1, y1 = z2 * x0 - z0 * x2, y2 = z0 * x1 - z1 * x0;
+
+            return [
+                x0, y0, z0, 0,
+                x1, y1, z1, 0,
+                x2, y2, z2, 0,
+                -(x0 * eye[0] + x1 * eye[1] + x2 * eye[2]),
+                -(y0 * eye[0] + y1 * eye[1] + y2 * eye[2]),
+                -(z0 * eye[0] + z1 * eye[1] + z2 * eye[2]),
+                1
+            ];
+        }
+
+        // --- Viewport Resize ---
+        function resize() {
+            const displayWidth = canvas.clientWidth * window.devicePixelRatio;
+            const displayHeight = canvas.clientHeight * window.devicePixelRatio;
+
+            if (canvas.width !== displayWidth || canvas.height !== displayHeight) {
+                canvas.width = displayWidth;
+                canvas.height = displayHeight;
+                gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
+            }
+        }
+        window.addEventListener('resize', resize);
+
+        // --- Interaction / Controls ---
+        let isDragging = false;
+        let button = -1;
+        let lastMouseX = 0, lastMouseY = 0;
+
+        canvas.addEventListener('mousedown', (e) => {
+            isDragging = true;
+            button = e.button;
+            lastMouseX = e.clientX;
+            lastMouseY = e.clientY;
+        });
+
+        window.addEventListener('mouseup', () => {
+            isDragging = false;
+            button = -1;
+        });
+
+        window.addEventListener('mousemove', (e) => {
+            if (!isDragging) return;
+            const dx = e.clientX - lastMouseX;
+            const dy = e.clientY - lastMouseY;
+            lastMouseX = e.clientX;
+            lastMouseY = e.clientY;
+
+            if (button === 0) {
+                // Orbit
+                camera.targetYaw += dx * 0.008;
+                camera.targetPitch += dy * 0.008;
+                camera.targetPitch = Math.max(-Math.PI / 2 + 0.05, Math.min(Math.PI / 2 - 0.05, camera.targetPitch));
+            } else if (button === 2) {
+                // Pan
+                const factor = camera.distance * 0.0012;
+                camera.panX -= dx * factor;
+                camera.panY += dy * factor;
+            }
+        });
+
+        canvas.addEventListener('wheel', (e) => {
+            e.preventDefault();
+            const zoomSpeed = 0.0015;
+            camera.targetDistance *= 1 + e.deltaY * zoomSpeed;
+            camera.targetDistance = Math.max(0.01, Math.min(500.0, camera.targetDistance));
+        }, { passive: false });
+
+        canvas.addEventListener('contextmenu', (e) => e.preventDefault());
+
+        function resetCamera() {
+            camera.targetYaw = 0.4;
+            camera.targetPitch = 0.3;
+            camera.targetDistance = Math.max(0.2, modelRadius * 2.5);
+            camera.panX = 0;
+            camera.panY = 0;
+        }
+
+        // --- Build Reference Grid Geometry ---
+        function rebuildGridGeometry() {
+            const size = Math.max(modelRadius * 2.5, 0.5);
+            const step = size / 10;
+            const yLevel = boundsMin[1] - modelRadius * 0.15;
+            let lines = [];
+
+            for (let i = -10; i <= 10; i++) {
+                let p = i * step;
+                // Line parallel to Z
+                lines.push(center[0] + p, yLevel, center[2] - size);
+                lines.push(center[0] + p, yLevel, center[2] + size);
+                // Line parallel to X
+                lines.push(center[0] - size, yLevel, center[2] + p);
+                lines.push(center[0] + size, yLevel, center[2] + p);
+            }
+
+            gridLineCount = lines.length / 3;
+            gl.bindBuffer(gl.ARRAY_BUFFER, gridVBO);
+            gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(lines), gl.DYNAMIC_DRAW);
+        }
+
+        // --- Build Cylinder Overlay Geometry ---
+        function rebuildCylinderGeometry() {
+            if (!cylinder || cylinder.radius <= 0) {
+                lineVertexCount = 0;
+                return;
+            }
+
+            const segments = 36;
+            const halfLen = cylinder.length * 0.5;
+            let axis = cylinder.axis;
+            let len = Math.hypot(axis[0], axis[1], axis[2]);
+            if (len < 0.0001) axis = [0, 0, 1];
+            else axis = [axis[0] / len, axis[1] / len, axis[2] / len];
+
+            // Orthogonal basis (u, v, axis)
+            let arbitrary = Math.abs(axis[2]) < 0.85 ? [0, 0, 1] : [1, 0, 0];
+            let ux = axis[1] * arbitrary[2] - axis[2] * arbitrary[1];
+            let uy = axis[2] * arbitrary[0] - axis[0] * arbitrary[2];
+            let uz = axis[0] * arbitrary[1] - axis[1] * arbitrary[0];
+            let uLen = Math.hypot(ux, uy, uz);
+            ux /= uLen; uy /= uLen; uz /= uLen;
+
+            let vx = axis[1] * uz - axis[2] * uy;
+            let vy = axis[2] * ux - axis[0] * uz;
+            let vz = axis[0] * uy - axis[1] * ux;
+
+            const r = cylinder.radius;
+            const c = cylinder.center;
+
+            let lines = [];
+
+            // 3 Cross-sectional rings (bottom, mid, top)
+            const ringOffsets = [-halfLen, 0, halfLen];
+            ringOffsets.forEach(zOff => {
+                let ringCenter = [c[0] + axis[0] * zOff, c[1] + axis[1] * zOff, c[2] + axis[2] * zOff];
+                for (let i = 0; i < segments; i++) {
+                    let a1 = (i / segments) * Math.PI * 2;
+                    let a2 = ((i + 1) / segments) * Math.PI * 2;
+
+                    let p1 = [
+                        ringCenter[0] + (ux * Math.cos(a1) + vx * Math.sin(a1)) * r,
+                        ringCenter[1] + (uy * Math.cos(a1) + vy * Math.sin(a1)) * r,
+                        ringCenter[2] + (uz * Math.cos(a1) + vz * Math.sin(a1)) * r
+                    ];
+                    let p2 = [
+                        ringCenter[0] + (ux * Math.cos(a2) + vx * Math.sin(a2)) * r,
+                        ringCenter[1] + (uy * Math.cos(a2) + vy * Math.sin(a2)) * r,
+                        ringCenter[2] + (uz * Math.cos(a2) + vz * Math.sin(a2)) * r
+                    ];
+                    lines.push(...p1, ...p2);
+                }
+            });
+
+            // 6 Longitudinal side lines
+            for (let i = 0; i < segments; i += 6) {
+                let a = (i / segments) * Math.PI * 2;
+                let bottomP = [
+                    c[0] - axis[0] * halfLen + (ux * Math.cos(a) + vx * Math.sin(a)) * r,
+                    c[1] - axis[1] * halfLen + (uy * Math.cos(a) + vy * Math.sin(a)) * r,
+                    c[2] - axis[2] * halfLen + (uz * Math.cos(a) + vz * Math.sin(a)) * r
+                ];
+                let topP = [
+                    c[0] + axis[0] * halfLen + (ux * Math.cos(a) + vx * Math.sin(a)) * r,
+                    c[1] + axis[1] * halfLen + (uy * Math.cos(a) + vy * Math.sin(a)) * r,
+                    c[2] + axis[2] * halfLen + (uz * Math.cos(a) + vz * Math.sin(a)) * r
+                ];
+                lines.push(...bottomP, ...topP);
+            }
+
+            // Central axis vector line (extended 15% past cylinder ends)
+            let axisStart = [
+                c[0] - axis[0] * (halfLen * 1.15),
+                c[1] - axis[1] * (halfLen * 1.15),
+                c[2] - axis[2] * (halfLen * 1.15)
+            ];
+            let axisEnd = [
+                c[0] + axis[0] * (halfLen * 1.15),
+                c[1] + axis[1] * (halfLen * 1.15),
+                c[2] + axis[2] * (halfLen * 1.15)
+            ];
+            lines.push(...axisStart, ...axisEnd);
+
+            lineVertexCount = lines.length / 3;
+
+            gl.bindBuffer(gl.ARRAY_BUFFER, lineVBO);
+            gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(lines), gl.DYNAMIC_DRAW);
+        }
+
+        // --- Render Loop ---
+        let frameCount = 0;
+        let fpsTimer = performance.now();
+        const fpsEl = document.getElementById('fps-val');
+
+        function render(time) {
+            resize();
+
+            // FPS Counter
+            frameCount++;
+            if (time - fpsTimer >= 500) {
+                fpsEl.textContent = Math.round((frameCount * 1000) / (time - fpsTimer));
+                frameCount = 0;
+                fpsTimer = time;
+            }
+
+            // Smooth camera interpolation
+            camera.yaw += (camera.targetYaw - camera.yaw) * 0.14;
+            camera.pitch += (camera.targetPitch - camera.pitch) * 0.14;
+            camera.distance += (camera.targetDistance - camera.distance) * 0.14;
+
+            gl.clearColor(0.055, 0.063, 0.075, 1.0); // #0e1013
+            gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+            gl.enable(gl.DEPTH_TEST);
+            gl.enable(gl.BLEND);
+            gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+
+            // Matrices
+            const aspect = gl.canvas.width / gl.canvas.height;
+            const proj = mat4Perspective(45 * Math.PI / 180, aspect, 0.001, 1000.0);
+
+            // Orbit camera position
+            const cx = camera.distance * Math.cos(camera.pitch) * Math.sin(camera.yaw);
+            const cy = camera.distance * Math.sin(camera.pitch);
+            const cz = camera.distance * Math.cos(camera.pitch) * Math.cos(camera.yaw);
+
+            const eye = [cx + camera.panX, cy + camera.panY, cz];
+            const lookTarget = [camera.panX, camera.panY, 0];
+            const up = [0, 1, 0];
+
+            const view = mat4LookAt(eye, lookTarget, up);
+            const mvp = mat4Multiply(proj, view);
+
+            // 1. Draw Reference Grid (if enabled)
+            if (showGrid && gridLineCount > 0) {
+                gl.useProgram(lineProgram);
+                gl.uniformMatrix4fv(uLineMVP, false, mvp);
+                gl.uniform3fv(uLineCenter, center);
+                gl.uniform4f(uLineColor, 0.18, 0.24, 0.32, 0.55);
+                gl.bindVertexArray(gridVAO);
+                gl.drawArrays(gl.LINES, 0, gridLineCount);
+            }
+
+            // 2. Draw Points
+            if (pointCount > 0) {
+                gl.useProgram(pointProgram);
+                gl.uniformMatrix4fv(uPointMVP, false, mvp);
+                gl.uniform1f(uPointSize, pointSize);
+                gl.uniform1i(uColorMode, colorMode);
+                gl.uniform1i(uShowOutliers, showOutliers);
+                gl.uniform3fv(uPointCenter, center);
+                gl.uniform3fv(uBoundsMin, boundsMin);
+                gl.uniform3fv(uBoundsMax, boundsMax);
+                gl.uniform1f(uModelRadius, modelRadius);
+
+                gl.bindVertexArray(pointVAO);
+                gl.drawArrays(gl.POINTS, 0, pointCount);
+            }
+
+            // 3. Draw 3D Fitted Cylinder Overlay
+            if (showOverlay && lineVertexCount > 0) {
+                gl.useProgram(lineProgram);
+                gl.uniformMatrix4fv(uLineMVP, false, mvp);
+                gl.uniform3fv(uLineCenter, center);
+
+                // Cylinder wireframe rings & lines: Cyan
+                gl.uniform4f(uLineColor, 0.24, 0.78, 0.92, 0.95);
+                gl.bindVertexArray(lineVAO);
+                gl.drawArrays(gl.LINES, 0, lineVertexCount - 2);
+
+                // Central axis line: Bright Lime / Green
+                gl.uniform4f(uLineColor, 0.43, 0.88, 0.64, 1.0);
+                gl.drawArrays(gl.LINES, lineVertexCount - 2, 2);
+            }
+
+            requestAnimationFrame(render);
+        }
+
+        requestAnimationFrame(render);
+
+        // --- C# WebMessage Bridge API ---
+        window.chrome?.webview?.addEventListener('message', (event) => {
+            const data = event.data;
+            if (!data) return;
+
+            if (data.type === 'loadPoints') {
+                const binaryString = atob(data.pointsBase64);
+                const bytes = new Uint8Array(binaryString.length);
+                for (let i = 0; i < binaryString.length; i++) {
+                    bytes[i] = binaryString.charCodeAt(i);
+                }
+                const positions = new Float32Array(bytes.buffer);
+                pointCount = positions.length / 3;
+                document.getElementById('point-count').textContent = pointCount.toLocaleString();
+
+                boundsMin = data.boundsMin || [-1, -1, -1];
+                boundsMax = data.boundsMax || [1, 1, 1];
+                center = data.center || [0, 0, 0];
+                modelRadius = data.modelRadius || 1.0;
+
+                gl.bindBuffer(gl.ARRAY_BUFFER, pointPosVBO);
+                gl.bufferData(gl.ARRAY_BUFFER, positions, gl.STATIC_DRAW);
+
+                // Outlier flags
+                if (data.outliersBase64) {
+                    const outBin = atob(data.outliersBase64);
+                    const outBytes = new Uint8Array(outBin.length);
+                    for (let i = 0; i < outBin.length; i++) outBytes[i] = outBin.charCodeAt(i);
+                    const outlierFloats = new Float32Array(outBytes.buffer);
+
+                    gl.bindBuffer(gl.ARRAY_BUFFER, pointOutlierVBO);
+                    gl.bufferData(gl.ARRAY_BUFFER, outlierFloats, gl.STATIC_DRAW);
+                } else {
+                    const zeros = new Float32Array(pointCount);
+                    gl.bindBuffer(gl.ARRAY_BUFFER, pointOutlierVBO);
+                    gl.bufferData(gl.ARRAY_BUFFER, zeros, gl.STATIC_DRAW);
+                }
+
+                rebuildGridGeometry();
+                resetCamera();
+            } else if (data.type === 'setOptions') {
+                if (data.pointSize !== undefined) {
+                    pointSize = Number(data.pointSize);
+                }
+                if (data.colorMode !== undefined) {
+                    const m = String(data.colorMode).toLowerCase();
+                    if (m === 'axis') colorMode = 0;
+                    else if (m === 'depth') colorMode = 1;
+                    else colorMode = 2; // solid
+                }
+                if (data.showOutliers !== undefined) {
+                    showOutliers = data.showOutliers ? 1 : 0;
+                }
+                if (data.showOverlay !== undefined) {
+                    showOverlay = !!data.showOverlay;
+                }
+                if (data.showGrid !== undefined) {
+                    showGrid = !!data.showGrid;
+                }
+            } else if (data.type === 'setCylinder') {
+                cylinder.axis = data.axis || [0, 0, 1];
+                cylinder.center = data.center || [0, 0, 0];
+                cylinder.radius = data.radius || 0.2;
+                cylinder.length = data.length || 1.0;
+                cylinder.rms = data.rms || 0.01;
+                rebuildCylinderGeometry();
+            } else if (data.type === 'resetView') {
+                resetCamera();
+            }
+        });
+
+        // Notify host that WebGL is initialized and ready
+        window.chrome?.webview?.postMessage({ type: 'ready', gpu: document.getElementById('gpu-name').textContent });
+    </script>
+</body>
+</html>

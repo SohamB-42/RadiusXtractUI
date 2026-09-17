@@ -1,0 +1,68 @@
+<ResourceDictionary
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <!-- Background -->
+    <Color x:Key="BackgroundDark">#0e1013</Color>
+    <Color x:Key="SurfaceStart">#1b1f24</Color>
+    <Color x:Key="SurfaceEnd">#15181c</Color>
+    <Color x:Key="NavRailBg">#0a0c0e</Color>
+    <Color x:Key="PanelBg">#121418</Color>
+    <Color x:Key="ViewportBg">#05070a</Color>
+    <Color x:Key="ConsoleBg">#0b0d10</Color>
+    <Color x:Key="CardBg">#1a1e23</Color>
+
+    <!-- Borders -->
+    <Color x:Key="BorderSubtle">#1f2227</Color>
+    <Color x:Key="BorderMedium">#22262c</Color>
+    <Color x:Key="BorderStrong">#2a2e33</Color>
+
+    <!-- Accent -->
+    <Color x:Key="AccentCyan">#3dc7eb</Color>
+    <Color x:Key="AccentCyanDark">#2ba6d4</Color>
+    <Color x:Key="AccentGreen">#6fe0a3</Color>
+    <Color x:Key="AccentAmber">#f5b754</Color>
+    <Color x:Key="AccentRed">#f5705a</Color>
+    <Color x:Key="AccentRedAxis">#f08a6a</Color>
+
+    <!-- Text -->
+    <Color x:Key="TextPrimary">#e8ebef</Color>
+    <Color x:Key="TextSecondary">#aab1ba</Color>
+    <Color x:Key="TextMuted">#7d858e</Color>
+    <Color x:Key="TextDim">#5b636c</Color>
+    <Color x:Key="TextSubtle">#8a929b</Color>
+
+    <!-- Brushes: Background -->
+    <SolidColorBrush x:Key="BackgroundDarkBrush" Color="{StaticResource BackgroundDark}" />
+    <SolidColorBrush x:Key="NavRailBgBrush" Color="{StaticResource NavRailBg}" />
+    <SolidColorBrush x:Key="PanelBgBrush" Color="{StaticResource PanelBg}" />
+    <SolidColorBrush x:Key="ViewportBgBrush" Color="{StaticResource ViewportBg}" />
+    <SolidColorBrush x:Key="ConsoleBgBrush" Color="{StaticResource ConsoleBg}" />
+    <SolidColorBrush x:Key="CardBgBrush" Color="{StaticResource CardBg}" />
+
+    <!-- Brushes: Borders -->
+    <SolidColorBrush x:Key="BorderSubtleBrush" Color="{StaticResource BorderSubtle}" />
+    <SolidColorBrush x:Key="BorderMediumBrush" Color="{StaticResource BorderMedium}" />
+    <SolidColorBrush x:Key="BorderStrongBrush" Color="{StaticResource BorderStrong}" />
+
+    <!-- Brushes: Accent -->
+    <SolidColorBrush x:Key="AccentCyanBrush" Color="{StaticResource AccentCyan}" />
+    <SolidColorBrush x:Key="AccentCyanDarkBrush" Color="{StaticResource AccentCyanDark}" />
+    <SolidColorBrush x:Key="AccentGreenBrush" Color="{StaticResource AccentGreen}" />
+    <SolidColorBrush x:Key="AccentAmberBrush" Color="{StaticResource AccentAmber}" />
+    <SolidColorBrush x:Key="AccentRedBrush" Color="{StaticResource AccentRed}" />
+    <SolidColorBrush x:Key="AccentRedAxisBrush" Color="{StaticResource AccentRedAxis}" />
+
+    <!-- Brushes: Text -->
+    <SolidColorBrush x:Key="TextPrimaryBrush" Color="{StaticResource TextPrimary}" />
+    <SolidColorBrush x:Key="TextSecondaryBrush" Color="{StaticResource TextSecondary}" />
+    <SolidColorBrush x:Key="TextMutedBrush" Color="{StaticResource TextMuted}" />
+    <SolidColorBrush x:Key="TextDimBrush" Color="{StaticResource TextDim}" />
+    <SolidColorBrush x:Key="TextSubtleBrush" Color="{StaticResource TextSubtle}" />
+
+    <!-- Transparent overlays -->
+    <SolidColorBrush x:Key="HoverOverlayBrush" Color="#0FFFFFFF" />
+    <SolidColorBrush x:Key="ActiveOverlayBrush" Color="#19FFFFFF" />
+    <SolidColorBrush x:Key="SwitchOffBrush" Color="#29FFFFFF" />
+
+</ResourceDictionary>
