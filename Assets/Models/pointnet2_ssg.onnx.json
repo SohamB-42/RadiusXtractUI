@@ -1,0 +1,39 @@
+{
+  "architecture": "pure-pytorch PointNet++ SSG",
+  "checkpoint": "..\\deepsegregation\\best model\\best.pt",
+  "checkpoint_sha256": "4272d30b9b782717d03599eefd2007ef2809ca8f4e6451dfa1356b73f56bb986",
+  "onnx_sha256": "ea0849593599583ee569dae345f957efc1e1941168cd24b544ef014dd08ae910",
+  "classes": [
+    "background",
+    "pipe"
+  ],
+  "input_name": "points",
+  "input_shape": [
+    1,
+    2048,
+    3
+  ],
+  "input_dtype": "float32",
+  "output_name": "logits",
+  "output_shape": [
+    1,
+    2048,
+    2
+  ],
+  "opset": 17,
+  "torch_version": "2.14.0+cpu",
+  "onnx_version": "1.23.2",
+  "preprocessing": {
+    "cell_size": 0.5,
+    "normalization": "per-cell center and max Euclidean radius",
+    "runtime_chunking": 2048,
+    "short_chunks": "repeat points cyclically to 2048; keep logits only for original points",
+    "farthest_point_sampling_start": "first input point in each chunk"
+  },
+  "notes": [
+    "The point dimension is static; this model uses Python-shape-dependent PointNet++ sampling.",
+    "The exporter fixes the FPS start at point 0; the inference CLI uses the same deterministic policy.",
+    "Validate ONNX Runtime DirectML operator support and output parity on Windows before deployment.",
+    "The binary checkpoint has no straight-pipe versus elbow distinction."
+  ]
+}

@@ -24,7 +24,9 @@ public sealed partial class EstimatePage : UserControl
     private bool _isResultsPanelOpen = true;
     private bool _isGpuReady = false;
     private List<Vector3>? _cachedPoints;
+    private int[]? _cachedLabels;
     private PipeResult? _cachedResult;
+    private string? _cachedFilePath;
 
     public EstimatePage()
     {
@@ -32,6 +34,7 @@ public sealed partial class EstimatePage : UserControl
 
         this.Loaded += OnLoaded;
         ViewModel.FileLoaded += OnFileLoaded;
+        ViewModel.EstimateRequested += OnEstimateRequested;
         ViewModel.PropertyChanged += OnViewModelPropertyChanged;
     }
 
@@ -71,7 +74,7 @@ public sealed partial class EstimatePage : UserControl
 
                 if (_cachedPoints != null && _cachedPoints.Count > 0)
                 {
-                    UploadPointsToGpu(_cachedPoints, _cachedResult);
+                    UploadPointsToGpu(_cachedPoints, _cachedLabels, _cachedResult);
                 }
             }
         }
@@ -83,23 +86,153 @@ public sealed partial class EstimatePage : UserControl
 
     private void OnFileLoaded(object? sender, string filePath)
     {
+        _cachedFilePath = filePath;
         Task.Run(() =>
         {
             var points = PcdReader.Read(filePath);
-            var fitResult = CylinderFitter.Fit(points, Path.GetFileName(filePath));
+            _cachedPoints = points;
+            _cachedLabels = null;
+            _cachedResult = null;
 
             DispatcherQueue.TryEnqueue(() =>
             {
-                ViewModel.CurrentResult = fitResult;
-                _cachedPoints = points;
-                _cachedResult = fitResult;
+                ViewModel.TotalPoints = points.Count;
+                ViewModel.PipePointsCount = 0;
+                ViewModel.ClutterPointsCount = 0;
+                ViewModel.AiInferenceTimeMs = 0;
+                ViewModel.AiStatusMessage = "Point cloud loaded. Click 'Estimate radius' to begin AI analysis.";
+                ViewModel.EstimateProgress = 0;
+                ViewModel.EstimateState = "idle";
 
-                UploadPointsToGpu(points, fitResult);
+                UploadPointsToGpu(points, null, null);
+                UpdateGpuOptions();
             });
         });
     }
 
-    private void UploadPointsToGpu(List<Vector3> points, PipeResult? result)
+    private async void OnEstimateRequested(object? sender, EventArgs e)
+    {
+        if (_cachedPoints != null && _cachedPoints.Count > 0)
+        {
+            await ExecuteEstimationAsync(_cachedPoints, _cachedFilePath);
+        }
+    }
+
+    private async Task ExecuteEstimationAsync(List<Vector3> points, string? filePath)
+    {
+        string fileName = Path.GetFileName(filePath ?? ViewModel.ActiveFileName);
+        
+        DispatcherQueue.TryEnqueue(() =>
+        {
+            ViewModel.EstimateState = "estimating";
+            ViewModel.EstimateProgress = 10;
+            ViewModel.TotalPoints = points.Count;
+        });
+
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        int[] labels;
+        List<Vector3> pointsToFit;
+
+        if (ViewModel.UseAiSegregation)
+        {
+            DispatcherQueue.TryEnqueue(() =>
+            {
+                ViewModel.AiStatusMessage = "Running PointNet++ segmentation on GPU...";
+            });
+
+            var progressHandler = new Progress<double>(p =>
+            {
+                DispatcherQueue.TryEnqueue(() =>
+                {
+                    ViewModel.EstimateProgress = 10 + (int)(p * 60); // 10% to 70%
+                });
+            });
+
+            try
+            {
+                labels = await DeepSegEngine.Instance.PredictLabelsAsync(points, cellSize: 0.5f, maxPoints: 2048, progress: progressHandler);
+                string hw = DeepSegEngine.Instance.UsedDirectML ? "DirectML GPU" : "CPU Fallback";
+                DispatcherQueue.TryEnqueue(() => ViewModel.EngineHardware = hw);
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"AI Inference Exception: {ex.Message}");
+                labels = new int[points.Count];
+                Array.Fill(labels, 1);
+                DispatcherQueue.TryEnqueue(() => ViewModel.EngineHardware = "CPU (Fallback)");
+            }
+
+            int pipeCount = 0;
+            var filteredPoints = new List<Vector3>(points.Count);
+            for (int i = 0; i < points.Count; i++)
+            {
+                if (labels[i] == 1)
+                {
+                    pipeCount++;
+                    filteredPoints.Add(points[i]);
+                }
+            }
+
+            DispatcherQueue.TryEnqueue(() =>
+            {
+                ViewModel.PipePointsCount = pipeCount;
+                ViewModel.ClutterPointsCount = points.Count - pipeCount;
+            });
+
+            pointsToFit = filteredPoints.Count >= 10 ? filteredPoints : points;
+        }
+        else
+        {
+            DispatcherQueue.TryEnqueue(() =>
+            {
+                ViewModel.AiStatusMessage = "Running Algebraic Taubin/RANSAC fitting...";
+                ViewModel.EstimateProgress = 50;
+                ViewModel.PipePointsCount = points.Count;
+                ViewModel.ClutterPointsCount = 0;
+                ViewModel.EngineHardware = "Algebraic (No AI)";
+            });
+
+            labels = new int[points.Count];
+            Array.Fill(labels, 1);
+            pointsToFit = points;
+        }
+
+        DispatcherQueue.TryEnqueue(() =>
+        {
+            ViewModel.AiStatusMessage = "Refining cylinder parameters...";
+            ViewModel.EstimateProgress = 80;
+        });
+
+        var fitResult = await Task.Run(() => CylinderFitter.Fit(pointsToFit, fileName));
+        sw.Stop();
+
+        DispatcherQueue.TryEnqueue(() =>
+        {
+            ViewModel.AiInferenceTimeMs = sw.ElapsedMilliseconds;
+            ViewModel.CurrentResult = fitResult;
+            ViewModel.EstimateProgress = 100;
+            ViewModel.EstimateState = "result";
+
+            _cachedPoints = points;
+            _cachedLabels = labels;
+            _cachedResult = fitResult;
+
+            if (ViewModel.UseAiSegregation && ViewModel.ColorMode != "ai")
+            {
+                ViewModel.ColorMode = "ai";
+                if (RbAi != null) RbAi.IsChecked = true;
+            }
+            else if (!ViewModel.UseAiSegregation && ViewModel.ColorMode == "ai")
+            {
+                ViewModel.ColorMode = "axis";
+                if (RbAxis != null) RbAxis.IsChecked = true;
+            }
+
+            UploadPointsToGpu(points, labels, fitResult);
+        });
+    }
+
+    private void UploadPointsToGpu(List<Vector3> points, int[]? labels, PipeResult? result)
     {
         if (!_isGpuReady || points.Count == 0) return;
 
@@ -108,6 +241,7 @@ public sealed partial class EstimatePage : UserControl
 
         float[] posArray = new float[points.Count * 3];
         float[] outlierArray = new float[points.Count];
+        float[] labelArray = new float[points.Count];
 
         Vector3 axisDir = result != null && (result.AxisX != 0 || result.AxisY != 0 || result.AxisZ != 0)
             ? Vector3.Normalize(new Vector3((float)result.AxisX, (float)result.AxisY, (float)result.AxisZ))
@@ -138,6 +272,8 @@ public sealed partial class EstimatePage : UserControl
                 float distAxis = Vector3.Cross(relP, axisDir).Length();
                 outlierArray[i] = Math.Abs(distAxis - targetRadius) > outlierTol ? 1.0f : 0.0f;
             }
+
+            labelArray[i] = (labels != null && i < labels.Length) ? labels[i] : 1.0f;
         }
 
         float cx = (minX + maxX) / 2f;
@@ -154,11 +290,16 @@ public sealed partial class EstimatePage : UserControl
         Buffer.BlockCopy(outlierArray, 0, outBytes, 0, outBytes.Length);
         string outBase64 = Convert.ToBase64String(outBytes);
 
+        byte[] lblBytes = new byte[labelArray.Length * sizeof(float)];
+        Buffer.BlockCopy(labelArray, 0, lblBytes, 0, lblBytes.Length);
+        string lblBase64 = Convert.ToBase64String(lblBytes);
+
         var msg = new
         {
             type = "loadPoints",
             pointsBase64 = posBase64,
             outliersBase64 = outBase64,
+            labelsBase64 = lblBase64,
             center = new[] { cx, cy, cz },
             boundsMin = new[] { minX, minY, minZ },
             boundsMax = new[] { maxX, maxY, maxZ },
@@ -228,7 +369,7 @@ public sealed partial class EstimatePage : UserControl
             UpdateGpuCylinder(ViewModel.CurrentResult);
             if (_cachedPoints != null && _cachedPoints.Count > 0)
             {
-                UploadPointsToGpu(_cachedPoints, ViewModel.CurrentResult);
+                UploadPointsToGpu(_cachedPoints, _cachedLabels, ViewModel.CurrentResult);
             }
         }
     }

@@ -175,10 +175,11 @@
 
         layout(location = 0) in vec3 a_position;
         layout(location = 1) in float a_is_outlier;
+        layout(location = 2) in float a_semantic_label;
 
         uniform mat4 u_mvp;
         uniform float u_pointSize;
-        uniform int u_colorMode; // 0: axis, 1: depth, 2: solid
+        uniform int u_colorMode; // 0: axis, 1: depth, 2: solid, 3: ai segmentation
         uniform int u_showOutliers;
         uniform vec3 u_center;
         uniform vec3 u_boundsMin;
@@ -208,6 +209,16 @@
                 // Outlier: Vibrant Neon Red + 1.6x size boost so it's unmistakably visible
                 v_color = vec3(1.0, 0.15, 0.15);
                 gl_PointSize = clamp(baseSize * 1.6, 3.0, 64.0);
+            } else if (u_colorMode == 3) {
+                // AI Segmentation mode:
+                // a_semantic_label: 0 = Background Clutter, 1 = Pipe Surface
+                if (a_semantic_label < 0.5) {
+                    v_color = vec3(0.32, 0.36, 0.42); // Dim slate gray for clutter
+                    gl_PointSize = clamp(baseSize * 0.75, 1.0, 32.0);
+                } else {
+                    v_color = vec3(0.0, 0.90, 1.0); // Vibrant electric cyan for segmented pipe
+                    gl_PointSize = clamp(baseSize, 1.0, 64.0);
+                }
             } else {
                 gl_PointSize = clamp(baseSize, 1.0, 64.0);
 
@@ -313,6 +324,7 @@
         const pointVAO = gl.createVertexArray();
         const pointPosVBO = gl.createBuffer();
         const pointOutlierVBO = gl.createBuffer();
+        const pointLabelVBO = gl.createBuffer();
 
         gl.bindVertexArray(pointVAO);
         gl.bindBuffer(gl.ARRAY_BUFFER, pointPosVBO);
@@ -322,6 +334,10 @@
         gl.bindBuffer(gl.ARRAY_BUFFER, pointOutlierVBO);
         gl.enableVertexAttribArray(1);
         gl.vertexAttribPointer(1, 1, gl.FLOAT, false, 0, 0);
+
+        gl.bindBuffer(gl.ARRAY_BUFFER, pointLabelVBO);
+        gl.enableVertexAttribArray(2);
+        gl.vertexAttribPointer(2, 1, gl.FLOAT, false, 0, 0);
         gl.bindVertexArray(null);
 
         // Line overlay buffer (cylinder)
@@ -732,7 +748,24 @@
                     gl.bufferData(gl.ARRAY_BUFFER, zeros, gl.STATIC_DRAW);
                 }
 
+                // Semantic labels (AI segmentation)
+                if (data.labelsBase64) {
+                    const lblBin = atob(data.labelsBase64);
+                    const lblBytes = new Uint8Array(lblBin.length);
+                    for (let i = 0; i < lblBin.length; i++) lblBytes[i] = lblBin.charCodeAt(i);
+                    const labelFloats = new Float32Array(lblBytes.buffer);
+
+                    gl.bindBuffer(gl.ARRAY_BUFFER, pointLabelVBO);
+                    gl.bufferData(gl.ARRAY_BUFFER, labelFloats, gl.STATIC_DRAW);
+                } else {
+                    const ones = new Float32Array(pointCount);
+                    ones.fill(1.0); // Default all to pipe if not provided
+                    gl.bindBuffer(gl.ARRAY_BUFFER, pointLabelVBO);
+                    gl.bufferData(gl.ARRAY_BUFFER, ones, gl.STATIC_DRAW);
+                }
+
                 rebuildGridGeometry();
+                lineVertexCount = 0; // Clear any existing cylinder overlay when new points load
                 resetCamera();
             } else if (data.type === 'setOptions') {
                 if (data.pointSize !== undefined) {
@@ -742,7 +775,7 @@
                     const m = String(data.colorMode).toLowerCase();
                     if (m === 'axis') colorMode = 0;
                     else if (m === 'depth') colorMode = 1;
-                    else colorMode = 2; // solid
+                    else if (m === 'ai' || m === 'segmentation' || m === 'aiseg') colorMode = 3;
                 }
                 if (data.showOutliers !== undefined) {
                     showOutliers = data.showOutliers ? 1 : 0;
