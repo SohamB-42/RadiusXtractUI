@@ -76,7 +76,8 @@
             </Grid.ColumnDefinitions>
 
             <!-- VIEWPORT AREA -->
-            <Border Grid.Column="0" Background="{StaticResource ViewportBgBrush}">
+            <Border Grid.Column="0" Background="{StaticResource ViewportBgBrush}"
+                    AllowDrop="True" DragOver="OnDragOver" Drop="OnDrop">
                 <Grid>
                     <WebView2 x:Name="GpuViewport" HorizontalAlignment="Stretch" VerticalAlignment="Stretch" />
 
@@ -102,7 +103,8 @@
 
                     <!-- EMPTY STATE -->
                     <Border Background="#E60e1013" Visibility="{x:Bind ViewModel.IsEmpty, Mode=OneWay, Converter={StaticResource BoolToVis}}"
-                            IsHitTestVisible="{x:Bind ViewModel.IsEmpty, Mode=OneWay}">
+                            IsHitTestVisible="{x:Bind ViewModel.IsEmpty, Mode=OneWay}"
+                            AllowDrop="True" DragOver="OnDragOver" Drop="OnDrop">
                         <Border Width="430" Padding="42,38" CornerRadius="14"
                                 BorderBrush="{StaticResource BorderStrongBrush}" BorderThickness="1.5"
                                 Background="{StaticResource BackgroundDarkBrush}"
@@ -112,7 +114,7 @@
                                 <PathIcon Data="M10 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z" Width="30" Height="30" HorizontalAlignment="Center" Foreground="{StaticResource AccentCyanBrush}" Margin="0,0,0,11"/>
                                 <TextBlock Text="Load a point cloud" FontSize="17" FontWeight="SemiBold" HorizontalAlignment="Center" Foreground="{StaticResource TextPrimaryBrush}"/>
                                 <TextBlock Text="Drop a file here or click to browse." HorizontalAlignment="Center" FontSize="13" Foreground="{StaticResource TextSubtleBrush}" Margin="0,0,0,0"/>
-                                <TextBlock Text=".pcd · .ply · .las · .xyz" HorizontalAlignment="Center" FontSize="13" Foreground="{StaticResource TextSecondaryBrush}"/>
+                                <TextBlock Text=".pcd · .laz · .las · .ply · .xyz" HorizontalAlignment="Center" FontSize="13" Foreground="{StaticResource TextSecondaryBrush}"/>
                             </StackPanel>
                         </Border>
                     </Border>

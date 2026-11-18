@@ -1,0 +1,4 @@
+laspy[lazrs]>=2.5.0
+numpy>=1.24.0
+plyfile>=1.0.0
+pyinstaller>=6.0.0

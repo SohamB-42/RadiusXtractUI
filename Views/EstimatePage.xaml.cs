@@ -4,12 +4,16 @@ using Microsoft.UI.Xaml.Input;
 using RadiusXtractUI.ViewModels;
 using RadiusXtractUI.Helpers;
 using RadiusXtractUI.Models;
+using RadiusXtractUI.Services;
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Numerics;
 using System.Text.Json;
 using System.Threading.Tasks;
+using Windows.ApplicationModel.DataTransfer;
+using Windows.Storage;
 using Windows.Storage.Pickers;
 using WinRT.Interop;
 
@@ -87,26 +91,84 @@ public sealed partial class EstimatePage : UserControl
     private void OnFileLoaded(object? sender, string filePath)
     {
         _cachedFilePath = filePath;
-        Task.Run(() =>
+        Task.Run(async () =>
         {
-            var points = PcdReader.Read(filePath);
-            _cachedPoints = points;
-            _cachedLabels = null;
-            _cachedResult = null;
-
-            DispatcherQueue.TryEnqueue(() =>
+            try
             {
-                ViewModel.TotalPoints = points.Count;
-                ViewModel.PipePointsCount = 0;
-                ViewModel.ClutterPointsCount = 0;
-                ViewModel.AiInferenceTimeMs = 0;
-                ViewModel.AiStatusMessage = "Point cloud loaded. Click 'Estimate radius' to begin AI analysis.";
-                ViewModel.EstimateProgress = 0;
-                ViewModel.EstimateState = "idle";
+                string pcdPathToRead = filePath;
 
-                UploadPointsToGpu(points, null, null);
-                UpdateGpuOptions();
-            });
+                // Check if raw LiDAR conversion is required (.laz, .las, .ply, etc.)
+                if (LidarConversionService.Instance.RequiresConversion(filePath))
+                {
+                    DispatcherQueue.TryEnqueue(() =>
+                    {
+                        ViewModel.AiStatusMessage = $"Converting raw LiDAR ({Path.GetExtension(filePath).ToUpperInvariant()}) to origin-shifted PCD...";
+                        ViewModel.EstimateProgress = 5;
+                    });
+
+                    var conversionProgress = new Progress<string>(msg =>
+                    {
+                        DispatcherQueue.TryEnqueue(() =>
+                        {
+                            ViewModel.AiStatusMessage = msg;
+                        });
+                    });
+
+                    var convResult = await LidarConversionService.Instance.ConvertToPcdAsync(filePath, conversionProgress);
+                    if (!convResult.Success)
+                    {
+                        DispatcherQueue.TryEnqueue(() =>
+                        {
+                            ViewModel.AiStatusMessage = $"LiDAR conversion failed: {convResult.ErrorMessage}";
+                            ViewModel.EstimateProgress = 0;
+                        });
+                        return;
+                    }
+
+                    pcdPathToRead = convResult.ConvertedPcdPath;
+                }
+
+                DispatcherQueue.TryEnqueue(() =>
+                {
+                    ViewModel.AiStatusMessage = "Loading point cloud...";
+                });
+
+                var points = PcdReader.Read(pcdPathToRead);
+                _cachedPoints = points;
+                _cachedLabels = null;
+                _cachedResult = null;
+
+                if (points.Count == 0)
+                {
+                    DispatcherQueue.TryEnqueue(() =>
+                    {
+                        ViewModel.AiStatusMessage = "No points could be loaded from the point cloud.";
+                        ViewModel.TotalPoints = 0;
+                    });
+                    return;
+                }
+
+                DispatcherQueue.TryEnqueue(() =>
+                {
+                    ViewModel.TotalPoints = points.Count;
+                    ViewModel.PipePointsCount = 0;
+                    ViewModel.ClutterPointsCount = 0;
+                    ViewModel.AiInferenceTimeMs = 0;
+                    ViewModel.AiStatusMessage = "Point cloud loaded. Click 'Estimate radius' to begin AI analysis.";
+                    ViewModel.EstimateProgress = 0;
+                    ViewModel.EstimateState = "idle";
+
+                    UploadPointsToGpu(points, null, null);
+                    UpdateGpuOptions();
+                });
+            }
+            catch (Exception ex)
+            {
+                DispatcherQueue.TryEnqueue(() =>
+                {
+                    ViewModel.AiStatusMessage = $"Error loading point cloud: {ex.Message}";
+                });
+            }
         });
     }
 
@@ -179,7 +241,20 @@ public sealed partial class EstimatePage : UserControl
                 ViewModel.ClutterPointsCount = points.Count - pipeCount;
             });
 
-            pointsToFit = filteredPoints.Count >= 10 ? filteredPoints : points;
+            // If AI detected a meaningful pipe segment (at least 200 points and >= 5% of points), fit to segmented points.
+            // Otherwise, fall back to the full point cloud to prevent degenerate micro-cylinder fits on low consensus.
+            if (filteredPoints.Count >= 200 && filteredPoints.Count >= points.Count * 0.05)
+            {
+                pointsToFit = filteredPoints;
+            }
+            else
+            {
+                pointsToFit = points;
+                DispatcherQueue.TryEnqueue(() =>
+                {
+                    ViewModel.AiStatusMessage = "Low AI pipe consensus; fitting cylinder across full point cloud...";
+                });
+            }
         }
         else
         {
@@ -380,7 +455,13 @@ public sealed partial class EstimatePage : UserControl
         picker.ViewMode = PickerViewMode.List;
         picker.SuggestedStartLocation = PickerLocationId.Downloads;
         picker.FileTypeFilter.Add(".pcd");
+        picker.FileTypeFilter.Add(".laz");
+        picker.FileTypeFilter.Add(".las");
         picker.FileTypeFilter.Add(".ply");
+        picker.FileTypeFilter.Add(".xyz");
+        picker.FileTypeFilter.Add(".pts");
+        picker.FileTypeFilter.Add(".txt");
+        picker.FileTypeFilter.Add(".e57");
 
         var window = (Application.Current as App)?.MainWindow;
         if (window != null)
@@ -399,6 +480,27 @@ public sealed partial class EstimatePage : UserControl
     private void OnEmptyStateClick(object sender, PointerRoutedEventArgs e)
     {
         OnOpenFileClick(sender, e);
+    }
+
+    private void OnDragOver(object sender, DragEventArgs e)
+    {
+        e.AcceptedOperation = DataPackageOperation.Copy;
+        e.DragUIOverride.Caption = "Load point cloud";
+        e.DragUIOverride.IsCaptionVisible = true;
+        e.DragUIOverride.IsContentVisible = true;
+    }
+
+    private async void OnDrop(object sender, DragEventArgs e)
+    {
+        if (e.DataView.Contains(StandardDataFormats.StorageItems))
+        {
+            var items = await e.DataView.GetStorageItemsAsync();
+            var file = items.OfType<StorageFile>().FirstOrDefault();
+            if (file != null && LidarConversionService.Instance.IsSupportedFormat(file.Path))
+            {
+                ViewModel.LoadFile(file.Path);
+            }
+        }
     }
 
     private void OnResetViewClick(object sender, RoutedEventArgs e)
